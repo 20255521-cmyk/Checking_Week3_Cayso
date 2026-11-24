@@ -60,6 +60,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 .check input{width:1.1rem;height:1.1rem;margin-top:.25rem;flex:none}
 .subjects{border:1px solid var(--line);border-radius:6px;padding:.5rem .75rem;background:var(--bg);max-height:440px;overflow:auto}
 .subjects .empty{color:var(--muted);margin:.4rem 0}
+.course-option{padding:.55rem 0;border-bottom:1px solid #d8eaf4}.course-option:last-child{border-bottom:0}.course-head{display:flex;gap:.6rem;align-items:flex-start}.course-head label{font-weight:400;margin:0}.course-head input{width:1.1rem;height:1.1rem;flex:none;margin:.25rem 0 0}.course-schedule{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem;margin:.6rem 0 .2rem 1.7rem}.course-schedule[hidden]{display:none}.course-schedule label{font-size:.82rem;margin-bottom:.2rem}.course-schedule select{padding:.45rem;font-size:.9rem}@media(max-width:560px){.course-schedule{grid-template-columns:1fr;margin-left:1.7rem}}
 .term{font-weight:700;margin:.9rem 0 .3rem;padding-bottom:.2rem;border-bottom:1px solid var(--line)}
 .term:first-child{margin-top:.2rem}
 .units{font-size:.9rem;color:var(--muted);margin-top:.4rem}
@@ -229,7 +230,7 @@ header h1{font-size:clamp(1.4rem,4.5vw,2rem);margin:0}
     <legend>Consultation with program chair</legend>
     <div><label for="ctime">Preferred time</label>
         <select id="ctime"><option value="">Select a program chair</option><option>BSIT- Program Chair</option><option>BSCS- Program Chair</option><option>BSCPE- Program Chair</option><option>Secretary</option><option>Dean</option><option></select>
-    <label class="check"><input type="checkbox" id="wantConsult"> I want to meet with my program chair before enrollment is final.</label>
+    <label class="check" style="margin-top:.5rem"><input type="checkbox" id="wantConsult"> I want to meet with my program chair before enrollment is final.</label>
     <div class="grid reveal" id="consultBox" hidden>
       <div><label for="cdate">Preferred date</label><input type="date" id="cdate"><div class="err" data-for="cdate"></div></div>
       <div><label for="ctime">Preferred time</label>
@@ -331,10 +332,35 @@ const MAX=10,MAX_UNITS=30;
 const $=id=>document.getElementById(id);
 const prog=$("program"), box=$("subjects");
 Object.keys(CATALOG).forEach(p=>{
-  if(/BSIT/.test(p))["Network Administration and Cybersecurity","Software Development","Multimedia"].forEach(t=>prog.add(new Option(p+" – "+t,p+"|"+t)));
+  if(/BSIT/.test(p))["Networking and Cybersecurity","Software Development","Multimedia"].forEach(t=>prog.add(new Option(p+" – "+t,p+"|"+t)));
   else prog.add(new Option(p,p));
 });
 
+const DAYS=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+function formatClock(minutes){
+  const hour=Math.floor(minutes/60),minute=minutes%60;
+  const suffix=hour>=12?"PM":"AM",displayHour=hour%12||12;
+  return displayHour+":"+String(minute).padStart(2,"0")+" "+suffix;
+}
+function timeSlotsForYear(year){
+  const endByYear={"1st":18*60+30,"2nd":19*60,"3rd":20*60,"4th":18*60+30};
+  const end=endByYear[year]||18*60+30;
+  const slots=[];
+  for(let start=8*60;start<end;start+=90){
+    const finish=Math.min(start+90,end);
+    slots.push(formatClock(start)+"–"+formatClock(finish));
+  }
+  return slots;
+}
+function sectionsForProgram(programKey){
+  const count=/BSIT/.test(programKey)?8:/BSCS/.test(programKey)?6:/BSCpE/.test(programKey)?4:4;
+  return Array.from({length:count},(_,i)=>String.fromCharCode(65+i));
+}
+function makeSelect(label,options){
+  const wrap=document.createElement("div"),lab=document.createElement("label"),sel=document.createElement("select");
+  lab.textContent=label;const first=new Option("Select "+label.toLowerCase(),"");sel.add(first);
+  options.forEach(v=>sel.add(new Option(v,v)));wrap.append(lab,sel);return {wrap,sel};
+}
 function renderSubjects(){
   const [pkey,track]=prog.value.split("|"),terms=CATALOG[pkey],yr=$("year").value.split(" ")[0].toLowerCase();
   if(!terms||!yr){box.innerHTML='<p class="empty">Select a program and year level to see its courses.</p>';updateUnits();return}
@@ -343,10 +369,16 @@ function renderSubjects(){
     const h=document.createElement("div");h.className="term";h.textContent=term;box.append(h);
     rows.split(";").forEach(r=>{
       const [code,title,u]=r.split("|");
-      const l=document.createElement("label");l.className="check";
-      const c=document.createElement("input");c.type="checkbox";c.name="subj";c.value=code;c.dataset.u=u;c.dataset.t=title;c.addEventListener("change",updateUnits);
-      l.append(c,document.createTextNode(code+" · "+title+" ("+u+" unit"+(u==="1"?"":"s")+")"));
-      box.append(l);
+      const item=document.createElement("div");item.className="course-option";
+      const head=document.createElement("div");head.className="course-head";
+      const c=document.createElement("input");c.type="checkbox";c.name="subj";c.value=code;c.dataset.u=u;c.dataset.t=title;
+      const label=document.createElement("label");label.textContent=code+" · "+title+" ("+u+" unit"+(u==="1"?"":"s")+")";label.htmlFor="";
+      head.append(c,label);
+      const schedule=document.createElement("div");schedule.className="course-schedule";schedule.hidden=true;
+      const day=makeSelect("Day",DAYS),time=makeSelect("Time",timeSlotsForYear(yr)),section=makeSelect("Section",sectionsForProgram(pkey));
+      schedule.append(day.wrap,time.wrap,section.wrap);item.append(head,schedule);box.append(item);
+      c.addEventListener("change",()=>{schedule.hidden=!c.checked;if(!c.checked){day.sel.value="";time.sel.value="";section.sel.value=""}updateUnits()});
+      c._schedule={day:day.sel,time:time.sel,section:section.sel};
     });
   });
   updateUnits();
@@ -379,6 +411,7 @@ function validate(){
   else setErr("status","");
   if(!prog.value)bad("program","Select a program.");
   else if(!chosen().length)bad("subjects","Select at least one course.");
+  chosen().forEach(c=>{const x=c._schedule;if(x&&(!x.day.value||!x.time.value||!x.section.value)){bad("subjects","Choose a day, time, and section for every selected course.");}});
   if($("wantConsult").checked){
     if(!$("cdate").value)bad("cdate","Pick a date for the consultation.");
     if(!$("ctime").value)bad("ctime","Pick a time for the consultation.");
@@ -389,7 +422,7 @@ function validate(){
   return true;
 }
 let lastRows=[];
-function row(dl,k,v){lastRows.push([k,String(v)]);const a=document.createElement("dt"),b=document.createElement("dd");a.textContent=k;if(k==="Courses"){String(v).split("; ").forEach(t=>{const d=document.createElement("div");d.textContent=t.split(" ")[0];b.append(d)})}else b.textContent=v;dl.append(a,b)}
+function row(dl,k,v){lastRows.push([k,String(v)]);const a=document.createElement("dt"),b=document.createElement("dd");a.textContent=k;if(k==="Courses"){String(v).split("; ").forEach(t=>{const d=document.createElement("div");d.textContent=t;b.append(d)})}else b.textContent=v;dl.append(a,b)}
 
 $("form").addEventListener("submit",async e=>{
   e.preventDefault();
@@ -401,7 +434,7 @@ $("form").addEventListener("submit",async e=>{
   row(dl,"Year level",$("year").value);
   row(dl,"Student status",document.querySelector('input[name="status"]:checked').value);
   row(dl,"Program",prog.options[prog.selectedIndex].text);
-  row(dl,"Courses",subs.map(c=>c.value+" "+c.dataset.t).join("; "));
+  row(dl,"Courses",subs.map(c=>{const x=c._schedule;return c.value+" "+c.dataset.t+" — "+x.day.value+", "+x.time.value+", Section "+x.section.value}).join("; "));
   row(dl,"Total units",subs.reduce((s,c)=>s+ +c.dataset.u,0));
   if($("wantConsult").checked){
     row(dl,"Program chair consultation",$("cdate").value+" at "+$("ctime").value+", "+$("cmode").value.toLowerCase());
@@ -442,7 +475,7 @@ async function finish(){
   show("receipt");
   const note=$("saveNote"),t=$("rcTitle"),g=k=>(lastRows.find(r=>r[0]===k)||["",""])[1];
   note.classList.remove("bad");$("rvStatus").textContent="";t.textContent="Enrollment submitted";note.textContent="Saving your enrollment...";
-  const rec={id:g("Student ID"),name:g("Name"),sid:g("Student ID"),year:g("Year level"),status:g("Student status"),program:g("Program"),units:g("Total units"),rows:lastRows.map(r=>r[0]+": "+r[1]),at:Date.now()};
+  const rec={id:g("Student ID"),name:g("Name"),sid:g("Student ID"),year:g("Year level"),status:g("Student status"),program:g("Program"),units:g("Total units"),courses:chosen().map(c=>({code:c.value,title:c.dataset.t,day:c._schedule.day.value,time:c._schedule.time.value,section:c._schedule.section.value})),rows:lastRows.map(r=>r[0]+": "+r[1]),at:Date.now()};
   try{
     const saved=readStore(STORAGE_KEY,[]);
     const index=saved.findIndex(item=>item.sid===rec.sid);
@@ -466,19 +499,34 @@ function syncAd(){
   $("adPass2Box").hidden=!up;$("adGo").textContent=up?"Create account":"Sign in";
   $("adPass").autocomplete=up?"new-password":"current-password";$("adMsg").textContent="";
 }
+function getAdminAccounts(){
+  const saved=readStore(ADMIN_KEY,[]);
+  // Migrate the original single-admin format to the new multiple-admin list.
+  if(Array.isArray(saved))return saved;
+  if(saved&&typeof saved==="object"&&saved.username){
+    const migrated=[saved];
+    writeStore(ADMIN_KEY,migrated);
+    return migrated;
+  }
+  return [];
+}
 async function adminGo(){
   const un=$("adUser").value.trim(),pw=$("adPass").value,msg=$("adMsg");msg.textContent="";
   if(!un||pw.length<6){msg.textContent="Enter a username and a password of at least 6 characters.";return}
   if(adMode==="up"&&pw!==$("adPass2").value){msg.textContent="The passwords do not match.";return}
   try{
-    const account=readStore(ADMIN_KEY,null);
+    const accounts=getAdminAccounts();
     if(adMode==="up"){
-      if(account){msg.textContent="An admin account already exists. Choose Sign in.";return}
-      writeStore(ADMIN_KEY,{username:un,password:pw});
-    }else{
-      if(!account){msg.textContent="No admin account yet. Choose Create account first.";return}
-      if(account.username!==un||account.password!==pw){msg.textContent="Wrong username or password.";return}
+      if(accounts.some(a=>(a.username||"").toLowerCase()===un.toLowerCase())){
+        msg.textContent="That admin username already exists. Please choose another username.";return;
+      }
+      accounts.push({username:un,password:pw,createdAt:Date.now()});
+      writeStore(ADMIN_KEY,accounts);
+      msg.textContent="Admin account created successfully. You can now sign in.";
+      adMode="in";syncAd();$("adUser").value=un;$("adPass").value="";return;
     }
+    const account=accounts.find(a=>a.username===un&&a.password===pw);
+    if(!account){msg.textContent=accounts.length?"Wrong username or password.":"No admin account yet. Choose Create account first.";return;}
     msg.textContent="";$("roleName").textContent="Admin · "+un;openAdmin();
   }catch(e){msg.textContent="Could not access browser storage. Please try again."}
 }
@@ -621,7 +669,14 @@ function announce(force){
   lastSt=key;lastCs=ckey;
 }
 function refreshStatus(){if(curSid&&(curView==="form"||curView==="receipt")){syncNotice();announce(false)}}
-window.addEventListener("storage",e=>{if(e.key===null||e.key===STORAGE_KEY||e.key===REVIEW_KEY)refreshStatus()});
+window.addEventListener("storage",e=>{
+  if(e.key===null||e.key===STORAGE_KEY||e.key===REVIEW_KEY){
+    refreshStatus();
+    if(curView==="admin"){
+      rows=readStore(STORAGE_KEY,[]);revs=readStore(REVIEW_KEY,{});renderAdmin();
+    }
+  }
+});
 window.addEventListener("focus",refreshStatus);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)refreshStatus()});
 function setHH(){const h=document.querySelector("header");if(h)document.documentElement.style.setProperty("--hh",h.offsetHeight+"px")}
